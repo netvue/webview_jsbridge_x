@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 typedef Future<T?> WebViewJSBridgeXHandler<T extends Object?>(Object? data);
 
@@ -18,8 +19,8 @@ class WebViewJSBridgeX {
   final _handlers = <String, WebViewJSBridgeXHandler>{};
   WebViewJSBridgeXHandler? defaultHandler;
 
-  Set<JavascriptChannel> get jsChannels => <JavascriptChannel>{
-        JavascriptChannel(
+  Set<JavaScriptChannelParams> get jsChannels => <JavaScriptChannelParams>{
+        JavaScriptChannelParams(
           name: 'YGFlutterJSBridgeChannel',
           onMessageReceived: _onMessageReceived,
         ),
@@ -31,7 +32,7 @@ class WebViewJSBridgeX {
         esVersion == WebViewXInjectJsVersion.es5 ? 'default' : 'async';
     final jsPath = 'packages/webview_jsbridge_x/assets/$jsVersion.js';
     final jsFile = await rootBundle.loadString(jsPath);
-    controller?.runJavascript(jsFile);
+    controller?.runJavaScript(jsFile);
   }
 
   void registerHandler(String handlerName, WebViewJSBridgeXHandler handler) {
@@ -42,7 +43,7 @@ class WebViewJSBridgeX {
     _handlers.remove(handlerName);
   }
 
-  void _onMessageReceived(JavascriptMessage message) {
+  void _onMessageReceived(JavaScriptMessage message) {
     final decodeStr = Uri.decodeFull(message.message);
     final jsonData = jsonDecode(decodeStr);
     final String type = jsonData['type'];
@@ -134,6 +135,6 @@ class WebViewJSBridgeX {
     final jsonStr = jsonEncode(jsonData);
     final encodeStr = Uri.encodeFull(jsonStr);
     final script = 'WebViewJavascriptBridge.nativeCall("$encodeStr")';
-    controller?.runJavascript(script);
+    controller?.runJavaScript(script);
   }
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:local_assets_server/local_assets_server.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:webview_jsbridge_x/webview_jsbridge_x.dart';
 
 void main() {
@@ -34,6 +35,7 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   final jsBridge = WebViewJSBridgeX();
+  late final WebViewController _controller;
 
   bool isListening = false;
   String? address;
@@ -41,6 +43,67 @@ class _HomeViewState extends State<HomeView> {
 
   @override
   initState() {
+    late final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+
+    final WebViewController controller =
+        WebViewController.fromPlatformCreationParams(params);
+
+    final isEs5 = widget.title == 'es5';
+    final jsVersion =
+        isEs5 ? WebViewXInjectJsVersion.es5 : WebViewXInjectJsVersion.es7;
+    final htmlVersion = isEs5 ? 'default' : 'async';
+
+    controller
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            debugPrint('WebView is loading (progress : $progress%)');
+          },
+          onPageStarted: (String url) {
+            debugPrint('Page started loading: $url');
+          },
+          onPageFinished: (String url) {
+            jsBridge.injectJs(esVersion: jsVersion);
+          },
+          onWebResourceError: (WebResourceError error) {
+            debugPrint('''
+Page resource error:
+  code: ${error.errorCode}
+  description: ${error.description}
+  errorType: ${error.errorType}
+  isForMainFrame: ${error.isForMainFrame}
+          ''');
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            if (request.url.contains('__bridge_loaded__')) {
+              jsBridge.injectJs(esVersion: jsVersion);
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse('http://$address:$port/$htmlVersion.html'));
+
+    jsBridge.jsChannels.forEach((channel) {
+      controller.addJavaScriptChannel(channel.name,
+          onMessageReceived: channel.onMessageReceived);
+    });
+
+    jsBridge.controller = controller;
+    jsBridge.defaultHandler = _defaultHandler;
+    jsBridge.registerHandler("NativeEcho", _nativeEchoHandler);
+
     _initServer();
     super.initState();
   }
@@ -119,33 +182,9 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  WebView _buildWebView() {
-    final isEs5 = widget.title == 'es5';
-    final jsVersion =
-        isEs5 ? WebViewXInjectJsVersion.es5 : WebViewXInjectJsVersion.es7;
-    final htmlVersion = isEs5 ? 'default' : 'async';
-    return WebView(
-      javascriptChannels: jsBridge.jsChannels,
-      // must enable js
-      javascriptMode: JavascriptMode.unrestricted,
-      onWebViewCreated: (controller) {
-        jsBridge.controller = controller;
-        jsBridge.defaultHandler = _defaultHandler;
-        jsBridge.registerHandler("NativeEcho", _nativeEchoHandler);
-      },
-      navigationDelegate: (NavigationRequest navigation) {
-        print('navigationDelegate ${navigation.url}');
-        // this is no effect on Android
-        if (navigation.url.contains('__bridge_loaded__')) {
-          jsBridge.injectJs(esVersion: jsVersion);
-          return NavigationDecision.prevent;
-        }
-        return NavigationDecision.navigate;
-      },
-      onPageFinished: (String url) {
-        jsBridge.injectJs(esVersion: jsVersion);
-      },
-      initialUrl: 'http://$address:$port/$htmlVersion.html',
+  WebViewWidget _buildWebView() {
+    return WebViewWidget(
+      controller: _controller,
     );
   }
 
